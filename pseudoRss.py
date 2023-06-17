@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# coding: utf-8
+
 #   Copyright 2023 hidenorly
 #
 #   Licensed baseUrl the Apache License, Version 2.0 (the "License");
@@ -17,6 +20,8 @@ import os
 import re
 import string
 import time
+import datetime
+import json
 from urllib.parse import urljoin
 from urllib.parse import urlparse
 from selenium import webdriver
@@ -26,14 +31,54 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import StaleElementReferenceException
 from selenium.common.exceptions import NoSuchElementException
 
-class WebPageHelper:
+class HashCache:
+    def __init__(self, cacheDir):
+        self.cacheDir = cacheDir
+
+    def getCacheFilename(self, url):
+        parsed_url = urlparse(url)
+        filename = parsed_url.netloc + parsed_url.path
+        filename = re.sub(r'[^a-zA-Z0-9\-_.]', '_', filename)
+        return os.path.join(self.cacheDir, filename)
+
+    def ensureCacheStorage(self):
+        if not os.path.exists(self.cacheDir):
+            os.makedirs(self.cacheDir)
+
+    def store(self, url, data):
+        self.ensureCacheStorage()
+        cachePath = self.getCacheFilename(url)
+
+        dt_now = datetime.datetime.now()
+        data["lastUpdate"] = dt_now.strftime("%Y-%m-%d %H:%M:%S")
+        with open(cachePath, 'w', encoding='UTF-8') as f:
+            json.dump(data, f, indent = 4, ensure_ascii=False)
+            f.close()
+        del data["lastUpdate"]
+
+    def restore(self, url):
+        result = {}
+
+        cachePath = self.getCacheFilename(url)
+        if os.path.exists( cachePath ):
+            with open(cachePath, 'r', encoding='UTF-8') as f:
+                result = json.load(f)
+                if "lastUpdate" in result:
+                    del result["lastUpdate"]
+
+        return result
+
+
+class WebLinkEnumerater:
     CONTROL_CHR_PATTERN = re.compile('[\x00-\x1f\x7f]')
 
+    @staticmethod
     def isSameDomain(url1, url2, baseUrl=""):
         isSame = urlparse(url1).netloc == urlparse(url2).netloc
         isbaseUrl =  ( (baseUrl=="") or url2.startswith(baseUrl) )
         return isSame and isbaseUrl
 
+    @staticmethod
     def getLinksByFactor(driver, pageUrl, byFactor=By.TAG_NAME, element='a', sameDomain=False):
         result = {}
 
@@ -42,30 +87,32 @@ class WebPageHelper:
             for element in tag_name_elements:
                 url = element.get_attribute('href')
                 title = str(element.text).strip()
-                title = WebPageHelper.CONTROL_CHR_PATTERN.sub(' ', title)
+                title = WebLinkEnumerater.CONTROL_CHR_PATTERN.sub(' ', title)
                 title = title.encode('utf-8', 'surrogatepass').decode('utf-8', 'ignore')
                 if url:
-                    if not sameDomain or WebPageHelper.isSameDomain(pageUrl, url, pageUrl):
+                    if not sameDomain or WebLinkEnumerater.isSameDomain(pageUrl, url, pageUrl):
                         result[url] = title
         except NoSuchElementException:
             pass
 
         return result
 
+    @staticmethod
     def getLinks(driver, url, isSameDomain):
         result = {}
 
         driver.get(url)
-        result = WebPageHelper.getLinksByFactor(driver, url, By.TAG_NAME, 'a', isSameDomain)
-        result.update( WebPageHelper.getLinksByFactor(driver, url, By.CSS_SELECTOR, 'a.post-link', isSameDomain) )
+        result = WebLinkEnumerater.getLinksByFactor(driver, url, By.TAG_NAME, 'a', isSameDomain)
+        result.update( WebLinkEnumerater.getLinksByFactor(driver, url, By.CSS_SELECTOR, 'a.post-link', isSameDomain) )
 
         return result
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='')
+    parser = argparse.ArgumentParser(description='Pseudo RSS', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('pages', metavar='PAGE', type=str, nargs='+', help='Web pages')
     #parser.add_argument('-i', '--input', dest='inputPath', type=str, default='.', help='list.csv title,url,sameDomain true or false')
     parser.add_argument('-o', '--output', dest='outputPath', type=str, default='.', help='Output folder')
+    parser.add_argument('-c', '--cache', dest='cacheDir', type=str, default='~/.pseudoRss', help='Cache Dir')
     parser.add_argument('-s', '--sameDomain', dest='sameDomain', action='store_true', default=False, help='Specify if you want to restrict in the same url')
     args = parser.parse_args()
 
@@ -74,8 +121,11 @@ if __name__ == '__main__':
     driver = webdriver.Chrome(options=options)
     driver.set_window_size(1920, 1080)
 
+    cache = HashCache(os.path.expanduser(args.cacheDir))
+
     for aUrl in args.pages:
-        urlList = WebPageHelper.getLinks(driver, aUrl, args.sameDomain)
+        urlList = WebLinkEnumerater.getLinks(driver, aUrl, args.sameDomain)
+        cache.store(aUrl, urlList)
         for theUrl, theTitle in urlList.items():
             print(str(theUrl)+":"+str(theTitle))
 
