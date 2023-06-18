@@ -79,7 +79,7 @@ class WebLinkEnumerater:
         return isSame and isbaseUrl
 
     @staticmethod
-    def getLinksByFactor(driver, pageUrl, byFactor=By.TAG_NAME, element='a', sameDomain=False):
+    def getLinksByFactor(driver, pageUrl, byFactor=By.TAG_NAME, element='a', sameDomain=False, onlyTextExists=False):
         result = {}
 
         try:
@@ -91,19 +91,20 @@ class WebLinkEnumerater:
                 title = title.encode('utf-8', 'surrogatepass').decode('utf-8', 'ignore')
                 if url:
                     if not sameDomain or WebLinkEnumerater.isSameDomain(pageUrl, url, pageUrl):
-                        result[url] = title
+                        if not onlyTextExists or title:
+                            result[url] = title
         except NoSuchElementException:
             pass
 
         return result
 
     @staticmethod
-    def getLinks(driver, url, isSameDomain):
+    def getLinks(driver, url, isSameDomain, onlyTextExists):
         result = {}
 
         driver.get(url)
-        result = WebLinkEnumerater.getLinksByFactor(driver, url, By.TAG_NAME, 'a', isSameDomain)
-        result.update( WebLinkEnumerater.getLinksByFactor(driver, url, By.CSS_SELECTOR, 'a.post-link', isSameDomain) )
+        result = WebLinkEnumerater.getLinksByFactor(driver, url, By.TAG_NAME, 'a', isSameDomain, onlyTextExists)
+        result.update( WebLinkEnumerater.getLinksByFactor(driver, url, By.CSS_SELECTOR, 'a.post-link', isSameDomain, onlyTextExists) )
 
         return result
 
@@ -114,6 +115,7 @@ if __name__ == '__main__':
     parser.add_argument('-o', '--output', dest='outputPath', type=str, default='.', help='Output folder')
     parser.add_argument('-c', '--cache', dest='cacheDir', type=str, default='~/.pseudoRss', help='Cache Dir')
     parser.add_argument('-s', '--sameDomain', dest='sameDomain', action='store_true', default=False, help='Specify if you want to restrict in the same url')
+    parser.add_argument('-t', '--onlyTextExists', dest='onlyTextExists', action='store_true', default=False, help='Specify if you want to restrict text existing link')
     args = parser.parse_args()
 
     options = webdriver.ChromeOptions()
@@ -124,7 +126,7 @@ if __name__ == '__main__':
     cache = HashCache(os.path.expanduser(args.cacheDir))
 
     for aUrl in args.pages:
-        urlList = WebLinkEnumerater.getLinks(driver, aUrl, args.sameDomain)
+        urlList = WebLinkEnumerater.getLinks(driver, aUrl, args.sameDomain, args.onlyTextExists)
         cache.store(aUrl, urlList)
         for theUrl, theTitle in urlList.items():
             print(str(theUrl)+":"+str(theTitle))
