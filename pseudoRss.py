@@ -108,6 +108,21 @@ class WebLinkEnumerater:
 
         return result
 
+    @staticmethod
+    def getNewLinks(prevUrlList, newUrlList, stopIfExist = True):
+        result = {}
+        isFoundNewOne = False
+        for aUrl, aTitle in newUrlList.items():
+            found = aUrl in prevUrlList
+            if not found:
+                result[aUrl] = aTitle
+                isFoundNewOne = True
+            if isFoundNewOne and stopIfExist and found:
+                break
+        return result
+
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Pseudo RSS', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('pages', metavar='PAGE', type=str, nargs='+', help='Web pages')
@@ -116,6 +131,7 @@ if __name__ == '__main__':
     parser.add_argument('-c', '--cache', dest='cacheDir', type=str, default='~/.pseudoRss', help='Cache Dir')
     parser.add_argument('-s', '--sameDomain', dest='sameDomain', action='store_true', default=False, help='Specify if you want to restrict in the same url')
     parser.add_argument('-t', '--onlyTextExists', dest='onlyTextExists', action='store_true', default=False, help='Specify if you want to restrict text existing link')
+    parser.add_argument('-d', '--diff', dest='diff', action='store_true', default=False, help='Specify if you want to list up new links')
     args = parser.parse_args()
 
     options = webdriver.ChromeOptions()
@@ -127,8 +143,13 @@ if __name__ == '__main__':
 
     for aUrl in args.pages:
         urlList = WebLinkEnumerater.getLinks(driver, aUrl, args.sameDomain, args.onlyTextExists)
+        listOut = urlList
+        if args.diff:
+            prevUrlList = cache.restore(aUrl)
+            listOut = WebLinkEnumerater.getNewLinks(prevUrlList, urlList, True)
         cache.store(aUrl, urlList)
-        for theUrl, theTitle in urlList.items():
+
+        for theUrl, theTitle in listOut.items():
             print(str(theUrl)+":"+str(theTitle))
 
     driver.quit()
