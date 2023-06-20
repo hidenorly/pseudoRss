@@ -121,17 +121,66 @@ class WebLinkEnumerater:
                 break
         return result
 
+class Reporter:
+    def __init__(self, output = None):
+        self.stream = None
+        if output:
+            self.stream = open(output, "a", encoding="utf-8")
+
+    def _print(self, data):
+        if self.stream:
+            self.stream.write( str(data) + "\n" )
+        else:
+            print( str(data) )
+
+    def print(self, data):
+        for aUrl, aTitle in data["links"].items():
+            self._print( str(aUrl) + ":" + str(aTitle) )
+
+    def close(self):
+        if self.stream:
+            self.stream.close()
+        self.stream = None
+
+    def __del__(self):
+        if self.stream:
+            self.close()
+
+
+class JsonReporter(Reporter):
+    def __init__(self, output = None):
+        super().__init__(output)
+        self._print("[")
+
+    def print(self, data):
+        self._print( "\t" + json.dumps(data) + "," )
+
+    def close(self):
+        self._print("]")
+        super().close()
+
+
+class CsvReporter(Reporter):
+    def __init__(self, output = None):
+        super().__init__(output)
+
+    def print(self, data):
+        for aUrl, aTitle in data["links"].items():
+            self._print( str(data["site"]) + "," + str(aUrl) + "," + str(aTitle) )
+
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Pseudo RSS', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('pages', metavar='PAGE', type=str, nargs='+', help='Web pages')
     #parser.add_argument('-i', '--input', dest='inputPath', type=str, default='.', help='list.csv title,url,sameDomain true or false')
-    parser.add_argument('-o', '--output', dest='outputPath', type=str, default='.', help='Output folder')
+    parser.add_argument('-o', '--output', dest='output', type=str, default=None, help='Output filename')
     parser.add_argument('-c', '--cache', dest='cacheDir', type=str, default='~/.pseudoRss', help='Cache Dir')
     parser.add_argument('-s', '--sameDomain', dest='sameDomain', action='store_true', default=False, help='Specify if you want to restrict in the same url')
     parser.add_argument('-t', '--onlyTextExists', dest='onlyTextExists', action='store_true', default=False, help='Specify if you want to restrict text existing link')
     parser.add_argument('-d', '--diff', dest='diff', action='store_true', default=False, help='Specify if you want to list up new links')
+    parser.add_argument('-n', '--newOnlyDiff', dest='newOnlyDiff', action='store_true', default=False, help='Specify if you want to enumerate new one only')
+    parser.add_argument('-f', '--format', action='store', default="text", help='Set output format text or json or csv')
     args = parser.parse_args()
 
     options = webdriver.ChromeOptions()
@@ -140,19 +189,26 @@ if __name__ == '__main__':
     driver.set_window_size(1920, 1080)
 
     cache = HashCache(os.path.expanduser(args.cacheDir))
+    reporter = Reporter
+    if args.format == "json":
+        reporter = JsonReporter
+    elif args.format == "csv":
+        reporter = CsvReporter
+    reporter = reporter(args.output)
 
     for aUrl in args.pages:
         urlList = WebLinkEnumerater.getLinks(driver, aUrl, args.sameDomain, args.onlyTextExists)
         listOut = urlList
         if args.diff:
             prevUrlList = cache.restore(aUrl)
-            listOut = WebLinkEnumerater.getNewLinks(prevUrlList, urlList, True)
+            listOut = WebLinkEnumerater.getNewLinks(prevUrlList, urlList, args.newOnlyDiff)
         cache.store(aUrl, urlList)
 
-        for theUrl, theTitle in listOut.items():
-            print(str(theUrl)+":"+str(theTitle))
+        outputData = {
+            "site" : aUrl,
+            "links": listOut
+        }
+        reporter.print( outputData )
 
+    reporter.close()
     driver.quit()
-
-
-
