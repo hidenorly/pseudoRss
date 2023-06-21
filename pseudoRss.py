@@ -22,6 +22,12 @@ import string
 import time
 import datetime
 import json
+import docx
+from docx import Document
+from docx.shared import Pt
+from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
+from docx.oxml.ns import nsdecls
+from docx.oxml import parse_xml
 from urllib.parse import urljoin
 from urllib.parse import urlparse
 from selenium import webdriver
@@ -169,6 +175,52 @@ class CsvReporter(Reporter):
             self._print( str(data["site"]) + "," + str(aUrl) + "," + str(aTitle) )
 
 
+class DocxReporter(Reporter):
+    def __init__(self, output = "output.docx"):
+        if output==None:
+            output = "output.docx"
+        self.document = Document()
+        self.output = output
+        if os.path.isfile(output):
+            self.document = Document(output)
+
+    def addTextWithLink(self, paragraph, text, url):
+        part = paragraph.part
+        r_id = part.relate_to(url, docx.opc.constants.RELATIONSHIP_TYPE.HYPERLINK, is_external=True)
+
+        hyperlink = docx.oxml.shared.OxmlElement('w:hyperlink')
+        hyperlink.set(docx.oxml.shared.qn('r:id'), r_id, )
+
+        new_run = docx.oxml.shared.OxmlElement('w:r')
+        rPr = docx.oxml.shared.OxmlElement('w:rPr')
+
+        new_run.append(rPr)
+        new_run.text = text
+        hyperlink.append(new_run)
+
+        paragraph._p.append(hyperlink)
+
+    def print(self, data):
+        if self.document:
+            dt_now = datetime.datetime.now()
+            today = dt_now.strftime("%Y-%m-%d")
+            doc = self.document
+            if "title" in data:
+                doc.add_heading(data["title"], level=1)
+            paragraph = doc.add_paragraph()
+            for aUrl, aTitle in data["links"].items():
+                self.addTextWithLink( paragraph, aTitle, aUrl )
+
+    def close(self):
+        if self.document:
+            self.document.save(self.output)
+        self.document = None
+
+    def __del__(self):
+        if self.document:
+            self.close()
+
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Pseudo RSS', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -180,7 +232,7 @@ if __name__ == '__main__':
     parser.add_argument('-t', '--onlyTextExists', dest='onlyTextExists', action='store_true', default=False, help='Specify if you want to restrict text existing link')
     parser.add_argument('-d', '--diff', dest='diff', action='store_true', default=False, help='Specify if you want to list up new links')
     parser.add_argument('-n', '--newOnlyDiff', dest='newOnlyDiff', action='store_true', default=False, help='Specify if you want to enumerate new one only')
-    parser.add_argument('-f', '--format', action='store', default="text", help='Set output format text or json or csv')
+    parser.add_argument('-f', '--format', action='store', default="text", help='Set output format text or json or csv or docx')
     args = parser.parse_args()
 
     options = webdriver.ChromeOptions()
@@ -194,6 +246,8 @@ if __name__ == '__main__':
         reporter = JsonReporter
     elif args.format == "csv":
         reporter = CsvReporter
+    elif args.format == "docx":
+        reporter = DocxReporter
     reporter = reporter(args.output)
 
     for aUrl in args.pages:
