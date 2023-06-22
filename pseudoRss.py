@@ -202,12 +202,21 @@ class DocxReporter(Reporter):
 
     def print(self, data):
         if self.document:
-            dt_now = datetime.datetime.now()
-            today = dt_now.strftime("%Y-%m-%d")
             doc = self.document
+
+            # add date
+            dt_now = datetime.datetime.now()
+            today = dt_now.strftime("%d %B %Y")
+            doc.add_heading(today, level=1)
+
+            # add paragraph
+            paragraph = None
             if "title" in data:
-                doc.add_heading(data["title"], level=1)
-            paragraph = doc.add_paragraph()
+                paragraph = doc.add_paragraph( data["title"] )
+            else:
+                paragraph = doc.add_paragraph()
+
+            # add list of links with title
             for aUrl, aTitle in data["links"].items():
                 self.addTextWithLink( paragraph, aTitle, aUrl )
 
