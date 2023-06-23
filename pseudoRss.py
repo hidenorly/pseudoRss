@@ -21,6 +21,7 @@ import re
 import string
 import time
 import datetime
+import csv
 import json
 import docx
 from docx import Document
@@ -212,7 +213,7 @@ class DocxReporter(Reporter):
             # add paragraph
             paragraph = None
             if "title" in data:
-                paragraph = doc.add_paragraph( data["title"] )
+                paragraph = doc.add_paragraph( data["title"]+"\n" )
             else:
                 paragraph = doc.add_paragraph()
 
@@ -233,8 +234,8 @@ class DocxReporter(Reporter):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Pseudo RSS', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('pages', metavar='PAGE', type=str, nargs='+', help='Web pages')
-    #parser.add_argument('-i', '--input', dest='inputPath', type=str, default='.', help='list.csv title,url,sameDomain true or false')
+    parser.add_argument('pages', metavar='PAGE', type=str, nargs='*', help='Web URLs')
+    parser.add_argument('-i', '--input', dest='input', type=str, default='.', help='list.csv url,title,sameDomain true or false,onlyTextExists true or false')
     parser.add_argument('-o', '--output', dest='output', type=str, default=None, help='Output filename')
     parser.add_argument('-c', '--cache', dest='cacheDir', type=str, default='~/.pseudoRss', help='Cache Dir')
     parser.add_argument('-s', '--sameDomain', dest='sameDomain', action='store_true', default=False, help='Specify if you want to restrict in the same url')
@@ -244,11 +245,13 @@ if __name__ == '__main__':
     parser.add_argument('-f', '--format', action='store', default="text", help='Set output format text or json or csv or docx')
     args = parser.parse_args()
 
+    # setup selenium
     options = webdriver.ChromeOptions()
     options.add_argument('--headless')
     driver = webdriver.Chrome(options=options)
     driver.set_window_size(1920, 1080)
 
+    # cache, reporter
     cache = HashCache(os.path.expanduser(args.cacheDir))
     reporter = Reporter
     if args.format == "json":
@@ -259,8 +262,37 @@ if __name__ == '__main__':
         reporter = DocxReporter
     reporter = reporter(args.output)
 
+    # input file
+    pages = []
+    if os.path.isfile(args.input):
+        with open(args.input, 'r' ) as csvFile:
+            data = csv.reader(csvFile)
+            for rows in data:
+                aData = {
+                    "url": rows[0],
+                    "sameDomain": False,
+                    "onlyTextExists": False
+                }
+                if len(rows)>1 and rows[1]:
+                    aData["title"] = rows[1]
+                if len(rows)>2 and rows[2] and rows[2].strip().lower()=="true":
+                    aData["sameDomain"] = True
+                if len(rows)>3 and rows[3] and rows[3].strip().lower()=="true":
+                    aData["onlyTextExists"] = True
+                pages.append(aData)
+            csvFile.close()
+
     for aUrl in args.pages:
-        urlList = WebLinkEnumerater.getLinks(driver, aUrl, args.sameDomain, args.onlyTextExists)
+        pages.append({
+                "url": aUrl,
+                "sameDomain": args.sameDomain,
+                "onlyTextExists": args.onlyTextExists
+            })
+
+    # enumeate link and output
+    for aPage in pages:
+        aUrl = aPage["url"]
+        urlList = WebLinkEnumerater.getLinks(driver, aUrl, aPage["sameDomain"], aPage["onlyTextExists"])
         listOut = urlList
         if args.diff:
             prevUrlList = cache.restore(aUrl)
@@ -268,9 +300,11 @@ if __name__ == '__main__':
         cache.store(aUrl, urlList)
 
         outputData = {
-            "site" : aUrl,
+            "site" : aPage["url"],
             "links": listOut
         }
+        if "title" in aPage:
+            outputData["title"] = aPage["title"]
         reporter.print( outputData )
 
     reporter.close()
