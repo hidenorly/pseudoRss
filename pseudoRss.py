@@ -144,6 +144,9 @@ class Reporter:
         for aUrl, aTitle in data["links"].items():
             self._print( str(aUrl) + ":" + str(aTitle) )
 
+    def printHeader(self):
+        pass
+
     def close(self):
         if self.stream:
             self.stream.close()
@@ -170,6 +173,9 @@ class JsonReporter(Reporter):
 class CsvReporter(Reporter):
     def __init__(self, output = None):
         super().__init__(output)
+
+    def printHeader(self):
+        self._print( "#site,url,title" )
 
     def print(self, data):
         for aUrl, aTitle in data["links"].items():
@@ -201,7 +207,7 @@ class DocxReporter(Reporter):
 
         paragraph._p.append(hyperlink)
 
-    def print(self, data):
+    def printHeader(self):
         if self.document:
             doc = self.document
 
@@ -209,6 +215,11 @@ class DocxReporter(Reporter):
             dt_now = datetime.datetime.now()
             today = dt_now.strftime("%d %B %Y")
             doc.add_heading(today, level=1)
+
+
+    def print(self, data):
+        if self.document:
+            doc = self.document
 
             # add paragraph
             paragraph = None
@@ -290,6 +301,8 @@ if __name__ == '__main__':
             })
 
     # enumeate link and output
+    reporter.printHeader()
+
     for aPage in pages:
         aUrl = aPage["url"]
         urlList = WebLinkEnumerater.getLinks(driver, aUrl, aPage["sameDomain"], aPage["onlyTextExists"])
