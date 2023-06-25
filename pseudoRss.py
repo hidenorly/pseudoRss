@@ -100,7 +100,7 @@ class WebLinkEnumerater:
                     if not sameDomain or WebLinkEnumerater.isSameDomain(pageUrl, url, pageUrl):
                         if not onlyTextExists or title:
                             result[url] = title
-        except NoSuchElementException:
+        except:
             pass
 
         return result
@@ -222,14 +222,12 @@ class DocxReporter(Reporter):
             doc = self.document
 
             # add paragraph
-            paragraph = None
-            if "title" in data:
-                paragraph = doc.add_paragraph( data["title"]+"\n" )
-            else:
-                paragraph = doc.add_paragraph()
+            if data["links"] and "title" in data:
+                doc.add_paragraph( data["title"] )
 
             # add list of links with title
             for aUrl, aTitle in data["links"].items():
+                paragraph = doc.add_paragraph(style='List Bullet')
                 self.addTextWithLink( paragraph, aTitle, aUrl )
 
     def close(self):
@@ -246,7 +244,7 @@ class DocxReporter(Reporter):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Pseudo RSS', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('pages', metavar='PAGE', type=str, nargs='*', help='Web URLs')
-    parser.add_argument('-i', '--input', dest='input', type=str, default='.', help='list.csv url,title,sameDomain true or false,onlyTextExists true or false')
+    parser.add_argument('-i', '--input', dest='input', type=str, default=None, help='list.csv url,title,sameDomain true or false,onlyTextExists true or false,newOnlyDiff true or false')
     parser.add_argument('-o', '--output', dest='output', type=str, default=None, help='Output filename')
     parser.add_argument('-c', '--cache', dest='cacheDir', type=str, default='~/.pseudoRss', help='Cache Dir')
     parser.add_argument('-s', '--sameDomain', dest='sameDomain', action='store_true', default=False, help='Specify if you want to restrict in the same url')
@@ -275,14 +273,15 @@ if __name__ == '__main__':
 
     # input file
     pages = []
-    if os.path.isfile(args.input):
+    if args.input and os.path.isfile(args.input):
         with open(args.input, 'r' ) as csvFile:
             data = csv.reader(csvFile)
             for rows in data:
                 aData = {
                     "url": rows[0],
                     "sameDomain": False,
-                    "onlyTextExists": False
+                    "onlyTextExists": False,
+                    "newOnlyDiff": False
                 }
                 if len(rows)>1 and rows[1]:
                     aData["title"] = rows[1]
@@ -290,6 +289,8 @@ if __name__ == '__main__':
                     aData["sameDomain"] = True
                 if len(rows)>3 and rows[3] and rows[3].strip().lower()=="true":
                     aData["onlyTextExists"] = True
+                if len(rows)>4 and rows[4] and rows[4].strip().lower()=="true":
+                    aData["newOnlyDiff"] = True
                 pages.append(aData)
             csvFile.close()
 
@@ -297,7 +298,8 @@ if __name__ == '__main__':
         pages.append({
                 "url": aUrl,
                 "sameDomain": args.sameDomain,
-                "onlyTextExists": args.onlyTextExists
+                "onlyTextExists": args.onlyTextExists,
+                "newOnlyDiff": args.newOnlyDiff
             })
 
     # enumeate link and output
@@ -309,7 +311,7 @@ if __name__ == '__main__':
         listOut = urlList
         if args.diff:
             prevUrlList = cache.restore(aUrl)
-            listOut = WebLinkEnumerater.getNewLinks(prevUrlList, urlList, args.newOnlyDiff)
+            listOut = WebLinkEnumerater.getNewLinks(prevUrlList, urlList, aPage["newOnlyDiff"])
         cache.store(aUrl, urlList)
 
         outputData = {
