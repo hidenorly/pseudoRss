@@ -100,7 +100,7 @@ class WebLinkEnumerater:
                     if not sameDomain or WebLinkEnumerater.isSameDomain(pageUrl, url, pageUrl):
                         if not onlyTextExists or title:
                             result[url] = title
-        except:
+        except Exception as e: #except NoSuchElementException:
             pass
 
         return result
@@ -109,9 +109,13 @@ class WebLinkEnumerater:
     def getLinks(driver, url, isSameDomain, onlyTextExists):
         result = {}
 
-        driver.get(url)
-        result = WebLinkEnumerater.getLinksByFactor(driver, url, By.TAG_NAME, 'a', isSameDomain, onlyTextExists)
-        result.update( WebLinkEnumerater.getLinksByFactor(driver, url, By.CSS_SELECTOR, 'a.post-link', isSameDomain, onlyTextExists) )
+        print(url)
+        try:
+            driver.get(url)
+            result = WebLinkEnumerater.getLinksByFactor(driver, url, By.TAG_NAME, 'a', isSameDomain, onlyTextExists)
+            result.update( WebLinkEnumerater.getLinksByFactor(driver, url, By.CSS_SELECTOR, 'a.post-link', isSameDomain, onlyTextExists) )
+        except Exception as e: #except NoSuchElementException:
+            print("Error at "+url)
 
         return result
 
@@ -252,6 +256,7 @@ if __name__ == '__main__':
     parser.add_argument('-d', '--diff', dest='diff', action='store_true', default=False, help='Specify if you want to list up new links')
     parser.add_argument('-n', '--newOnlyDiff', dest='newOnlyDiff', action='store_true', default=False, help='Specify if you want to enumerate new one only')
     parser.add_argument('-f', '--format', action='store', default="text", help='Set output format text or json or csv or docx')
+    parser.add_argument('-v', '--verbose', dest='verbose', action='store_true', default=False, help='Specify if you want to enableverbose log output')
     args = parser.parse_args()
 
     # setup selenium
@@ -277,29 +282,34 @@ if __name__ == '__main__':
         with open(args.input, 'r' ) as csvFile:
             data = csv.reader(csvFile)
             for rows in data:
-                aData = {
-                    "url": rows[0],
-                    "sameDomain": False,
-                    "onlyTextExists": False,
-                    "newOnlyDiff": False
-                }
-                if len(rows)>1 and rows[1]:
-                    aData["title"] = rows[1]
-                if len(rows)>2 and rows[2] and rows[2].strip().lower()=="true":
-                    aData["sameDomain"] = True
-                if len(rows)>3 and rows[3] and rows[3].strip().lower()=="true":
-                    aData["onlyTextExists"] = True
-                if len(rows)>4 and rows[4] and rows[4].strip().lower()=="true":
-                    aData["newOnlyDiff"] = True
-                pages.append(aData)
+                if args.verbose:
+                    print("csv data is "+str(rows))
+                if len(rows)>0:
+                    aData = {
+                        "url": rows[0],
+                        "sameDomain": False,
+                        "onlyTextExists": False,
+                        "newOnlyDiff": False
+                    }
+                    if len(rows)>1 and rows[1]:
+                        aData["title"] = rows[1]
+                    if len(rows)>2 and rows[2] and rows[2].strip().lower()=="true":
+                        aData["sameDomain"] = True
+                    if len(rows)>3 and rows[3] and rows[3].strip().lower()=="true":
+                        aData["onlyTextExists"] = True
+                    if len(rows)>4 and rows[4] and rows[4].strip().lower()=="true":
+                        aData["newOnlyDiff"] = True
+                    pages.append(aData)
             csvFile.close()
+
 
     for aUrl in args.pages:
         pages.append({
                 "url": aUrl,
                 "sameDomain": args.sameDomain,
                 "onlyTextExists": args.onlyTextExists,
-                "newOnlyDiff": args.newOnlyDiff
+                "newOnlyDiff": args.newOnlyDiff,
+                "title" : ""
             })
 
     # enumeate link and output
@@ -307,6 +317,8 @@ if __name__ == '__main__':
 
     for aPage in pages:
         aUrl = aPage["url"]
+        if args.verbose:
+            print("checking..."+aPage["title"]+" ("+aUrl+")...")
         urlList = WebLinkEnumerater.getLinks(driver, aUrl, aPage["sameDomain"], aPage["onlyTextExists"])
         listOut = urlList
         if args.diff:
