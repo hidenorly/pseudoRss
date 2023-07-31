@@ -38,6 +38,8 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import StaleElementReferenceException
 from selenium.common.exceptions import NoSuchElementException
 
+isVerbose = False
+
 class HashCache:
     def __init__(self, cacheDir):
         self.cacheDir = cacheDir
@@ -109,7 +111,8 @@ class WebLinkEnumerater:
     def getLinks(driver, url, isSameDomain, onlyTextExists):
         result = {}
 
-        print(url)
+        if isVerbose:
+            print(url)
         try:
             driver.get(url)
             result = WebLinkEnumerater.getLinksByFactor(driver, url, By.TAG_NAME, 'a', isSameDomain, onlyTextExists)
@@ -258,6 +261,7 @@ if __name__ == '__main__':
     parser.add_argument('-f', '--format', action='store', default="text", help='Set output format text or json or csv or docx')
     parser.add_argument('-v', '--verbose', dest='verbose', action='store_true', default=False, help='Specify if you want to enableverbose log output')
     args = parser.parse_args()
+    isVerbose = args.verbose
 
     # setup selenium
     options = webdriver.ChromeOptions()
@@ -317,7 +321,7 @@ if __name__ == '__main__':
 
     for aPage in pages:
         aUrl = aPage["url"]
-        if args.verbose:
+        if isVerbose:
             print("checking..."+aPage["title"]+" ("+aUrl+")...")
         urlList = WebLinkEnumerater.getLinks(driver, aUrl, aPage["sameDomain"], aPage["onlyTextExists"])
         listOut = urlList
