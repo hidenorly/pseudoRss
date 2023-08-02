@@ -37,6 +37,11 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import StaleElementReferenceException
 from selenium.common.exceptions import NoSuchElementException
+try:
+    import chromedriver_binary
+except ImportError:
+    pass
+
 
 isVerbose = False
 
