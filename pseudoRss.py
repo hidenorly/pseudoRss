@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # coding: utf-8
 
-#   Copyright 2023 hidenorly
+#   Copyright 2023,2024 hidenorly
 #
 #   Licensed baseUrl the Apache License, Version 2.0 (the "License");
 #   you may not use this file except in compliance with the License.
@@ -24,6 +24,8 @@ import datetime
 import csv
 import json
 import docx
+import requests
+import time
 from docx import Document
 from docx.shared import Pt
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
@@ -88,12 +90,44 @@ class WebLinkEnumerater:
 
     @staticmethod
     def isSameDomain(url1, url2, baseUrl=""):
-        isSame = urlparse(url1).netloc == urlparse(url2).netloc
-        isbaseUrl =  ( (baseUrl=="") or url2.startswith(baseUrl) )
-        return isSame and isbaseUrl
+        pos = baseUrl.rfind("/")
+        if pos!=-1:
+            baseUrl = baseUrl[0:pos]
+
+        parsedUrl1 = urlparse(url1)
+        parsedUrl2 = urlparse(url2)
+        parsedBase = urlparse(baseUrl)
+        if not parsedUrl1.netloc:
+            parsedUrl1 = urlparse( urljoin(parsedBase.netloc, url1 ) )
+        if not parsedUrl2.netloc:
+            parsedUrl2 = urlparse( urljoin(parsedBase.netloc, url2 ) )
+        isSame = parsedUrl1.netloc == parsedUrl2.netloc
+
+
+        isBaseUrl =  ( (baseUrl=="") or url2.startswith(baseUrl) )
+        return isSame and isBaseUrl
 
     @staticmethod
-    def getLinksByFactor(driver, pageUrl, byFactor=By.TAG_NAME, element='a', sameDomain=False, onlyTextExists=False):
+    def getPageTitle(driver, url):
+        title = ""
+        text = ""
+        time.sleep(0.1)
+        try:
+            res = requests.get(url, stream=True)
+            if res:
+                text = res.content[:4096].decode('utf-8')
+        except:
+            pass
+        pos1 = text.find("<title>")
+        if pos1!=-1:
+            pos2 = text.find("</title>")
+            if pos2!=-1 and (pos2 > pos1):
+                title = text[pos1+7:pos2].strip()
+
+        return title
+
+    @staticmethod
+    def getLinksByFactor(driver, pageUrl, byFactor=By.TAG_NAME, element='a', sameDomain=False, onlyTextExists=False, useUrl=False):
         result = {}
 
         try:
@@ -104,24 +138,37 @@ class WebLinkEnumerater:
                 title = WebLinkEnumerater.CONTROL_CHR_PATTERN.sub(' ', title)
                 title = title.encode('utf-8', 'surrogatepass').decode('utf-8', 'ignore')
                 if url:
+                    if not useUrl:
+                        _title = WebLinkEnumerater.getPageTitle(driver, url)
+                        if len(_title) > len(title):
+                            title = _title
                     if not sameDomain or WebLinkEnumerater.isSameDomain(pageUrl, url, pageUrl):
                         if not onlyTextExists or title:
-                            result[url] = title
+                            if useUrl:
+                                result[url] = url
+                            else:
+                                result[url] = title
+
         except Exception as e: #except NoSuchElementException:
             pass
 
         return result
 
     @staticmethod
-    def getLinks(driver, url, isSameDomain, onlyTextExists):
+    def getLinks(driver, url, isSameDomain, onlyTextExists, useUrl):
         result = {}
 
         if isVerbose:
             print(url)
         try:
             driver.get(url)
-            result = WebLinkEnumerater.getLinksByFactor(driver, url, By.TAG_NAME, 'a', isSameDomain, onlyTextExists)
-            result.update( WebLinkEnumerater.getLinksByFactor(driver, url, By.CSS_SELECTOR, 'a.post-link', isSameDomain, onlyTextExists) )
+            try:
+                WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, 'a')))
+            except:
+                pass
+            time.sleep(0.1)
+            result = WebLinkEnumerater.getLinksByFactor(driver, url, By.TAG_NAME, 'a', isSameDomain, onlyTextExists, useUrl)
+            result.update( WebLinkEnumerater.getLinksByFactor(driver, url, By.CSS_SELECTOR, 'a.post-link', isSameDomain, onlyTextExists, useUrl) )
         except Exception as e: #except NoSuchElementException:
             print("Error at "+url)
 
@@ -239,8 +286,9 @@ class DocxReporter(Reporter):
 
             # add list of links with title
             for aUrl, aTitle in data["links"].items():
-                paragraph = doc.add_paragraph(style='List Bullet')
-                self.addTextWithLink( paragraph, aTitle, aUrl )
+                if aUrl and aTitle:
+                    paragraph = doc.add_paragraph(style='List Bullet')
+                    self.addTextWithLink( paragraph, aTitle, aUrl )
 
     def close(self):
         if self.document:
@@ -263,6 +311,7 @@ if __name__ == '__main__':
     parser.add_argument('-t', '--onlyTextExists', dest='onlyTextExists', action='store_true', default=False, help='Specify if you want to restrict text existing link')
     parser.add_argument('-d', '--diff', dest='diff', action='store_true', default=False, help='Specify if you want to list up new links')
     parser.add_argument('-n', '--newOnlyDiff', dest='newOnlyDiff', action='store_true', default=False, help='Specify if you want to enumerate new one only')
+    parser.add_argument('-u', '--useUrl', dest='useUrl', action='store_true', default=False, help='Specify if you want to use url instead of page title')
     parser.add_argument('-f', '--format', action='store', default="text", help='Set output format text or json or csv or docx')
     parser.add_argument('-v', '--verbose', dest='verbose', action='store_true', default=False, help='Specify if you want to enableverbose log output')
     args = parser.parse_args()
@@ -298,7 +347,8 @@ if __name__ == '__main__':
                         "url": rows[0],
                         "sameDomain": False,
                         "onlyTextExists": False,
-                        "newOnlyDiff": False
+                        "newOnlyDiff": False,
+                        "useUrl": False,
                     }
                     if len(rows)>1 and rows[1]:
                         aData["title"] = rows[1]
@@ -308,6 +358,8 @@ if __name__ == '__main__':
                         aData["onlyTextExists"] = True
                     if len(rows)>4 and rows[4] and rows[4].strip().lower()=="true":
                         aData["newOnlyDiff"] = True
+                    if len(rows)>5 and rows[5] and rows[5].strip().lower()=="true":
+                        aData["useUrl"] = True
                     pages.append(aData)
             csvFile.close()
 
@@ -318,6 +370,7 @@ if __name__ == '__main__':
                 "sameDomain": args.sameDomain,
                 "onlyTextExists": args.onlyTextExists,
                 "newOnlyDiff": args.newOnlyDiff,
+                "useUrl" : args.useUrl,
                 "title" : ""
             })
 
@@ -328,7 +381,7 @@ if __name__ == '__main__':
         aUrl = aPage["url"]
         if isVerbose:
             print("checking..."+aPage["title"]+" ("+aUrl+")...")
-        urlList = WebLinkEnumerater.getLinks(driver, aUrl, aPage["sameDomain"], aPage["onlyTextExists"])
+        urlList = WebLinkEnumerater.getLinks(driver, aUrl, aPage["sameDomain"], aPage["onlyTextExists"], aPage["useUrl"])
         listOut = urlList
         if args.diff:
             prevUrlList = cache.restore(aUrl)

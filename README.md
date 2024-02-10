@@ -9,7 +9,7 @@ Note that this script is basically expected to execute daily, etc. to enumerate 
 ## Requirements
 
 ```
-pip install python-docx
+pip install python-docx selenium
 ```
 
 
